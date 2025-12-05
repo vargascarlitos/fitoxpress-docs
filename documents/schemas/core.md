@@ -322,6 +322,8 @@ Pedidos de entrega.
 | `due_by` | `timestamptz` | SÍ | - | Fecha límite de entrega |
 | `created_by_auth` | `uuid` | SÍ | - | Usuario que creó el pedido |
 | `updated_at` | `timestamptz` | NO | `now()` | Última actualización |
+| `scheduled_date` | `date` | SÍ | - | Fecha programada para entrega (cuando se reagenda) |
+| `reschedule_count` | `integer` | NO | `0` | Contador de veces que se reagendó |
 
 **Constraints:**
 - `PRIMARY KEY (id)`
@@ -343,6 +345,7 @@ Pedidos de entrega.
 | `entregado` | `sin_cobro` | Entregado, sin cobro aún |
 | `entregado` | `cobrado` | Entregado y cobrado |
 | `rechazado_puerta` | `sin_cobro` | Cliente rechazó en destino (se cobra tarifa al comercio) |
+| `reagendado` | `sin_cobro` | Cliente pidió entregar otro día (NO entra en cierre) |
 
 **Flags de liquidación:**
 - `settled_with_merchant`: Se incluyó en una liquidación al comercio
@@ -426,21 +429,31 @@ Prueba de entrega (Proof of Delivery).
 ### Ciclo de vida del pedido
 
 ```
-                              ┌─→ entregado
-                              │        ↓
-recepcionado → en_transito ───┤   cash_status: cobrado
-                              │        ↓
-                              └─→ rechazado_puerta
-                                       ↓
-                              settled_with_merchant: true
-                                       ↓
-                              settled_with_rider: true
+                              ┌─→ entregado ──────────────────┐
+                              │        ↓                      │
+recepcionado → en_transito ───┼─→ rechazado_puerta ──────────┼─→ settled_with_merchant
+                              │                               │          ↓
+                              └─→ reagendado                  │   settled_with_rider
+                                     ↓                        │
+                              (scheduled_date = nueva fecha)  │
+                              (reschedule_count += 1)         │
+                                     ↓                        │
+                              recepcionado (día programado) ──┘
 ```
 
-**Nota sobre rechazos:**
-- Cuando el cliente rechaza en la puerta, el rider marca `rechazado_puerta`
-- El pedido NO tiene cobro (`cash_status` queda `sin_cobro`)
-- En el cierre diario, se cobra la tarifa de envío al comercio (el rider hizo el viaje)
+**Estados finales (entran en cierre diario):**
+- `entregado`: Comercio recibe (cobrado - tarifa)
+- `rechazado_puerta`: Comercio paga (-tarifa)
+
+**Estados intermedios (NO entran en cierre):**
+- `recepcionado`, `en_transito`, `reagendado`
+
+**Nota sobre reagendamiento:**
+- Cuando el cliente pide entregar otro día, el rider marca `reagendado`
+- Se actualiza `scheduled_date` con la nueva fecha
+- Se incrementa `reschedule_count`
+- El pedido aparece en la cola del día programado
+- NO entra en el cierre del día hasta que tenga estado final
 
 ### Ventanas de entrega
 

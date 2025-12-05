@@ -30,7 +30,7 @@ end $$;
 
 do $$ begin
   if not exists (select 1 from pg_type where typname = 'delivery_status') then
-    create type delivery_status as enum ('recepcionado','en_transito','entregado','rechazado_puerta');
+    create type delivery_status as enum ('recepcionado','en_transito','entregado','rechazado_puerta','reagendado');
   end if;
 end $$;
 
@@ -234,7 +234,10 @@ create table if not exists core."order" (
   requested_at        timestamptz not null default now(),
   due_by              timestamptz,
   created_by_auth     uuid,
-  updated_at          timestamptz not null default now()
+  updated_at          timestamptz not null default now(),
+  -- Reagendamiento
+  scheduled_date      date,                           -- Fecha programada para entrega
+  reschedule_count    integer not null default 0      -- Veces que se reagendó
 );
 
 create table if not exists core.order_item (
@@ -933,6 +936,7 @@ $$;
 -- =========================================
 create index if not exists ix_order_merchant_time on core."order"(merchant_id, requested_at desc);
 create index if not exists ix_order_status on core."order"(status);
+create index if not exists ix_order_scheduled_date on core."order"(scheduled_date) where scheduled_date is not null;
 create index if not exists ix_assignment_order on ops.assignment(order_id);
 create index if not exists ix_assignment_courier_status on ops.assignment(courier_id, status);
 create index if not exists ix_collection_order_status on billing.collection(order_id, status);
