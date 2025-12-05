@@ -1,0 +1,26 @@
+flowchart TB
+    subgraph PEDIDOS
+        O1[Pedido 1 - Entregado/Cobrado]
+        O2[Pedido 2 - Entregado/Cobrado]
+        O3[Pedido 3 - Entregado/Cobrado]
+    end
+
+    subgraph LIQUIDACION
+        STL[settlement]
+        SI1[settlement_item 1]
+        SI2[settlement_item 2]
+        SI3[settlement_item 3]
+    end
+
+    subgraph COMERCIO
+        MER[merchant]
+    end
+
+    O1 --> SI1
+    O2 --> SI2
+    O3 --> SI3
+    SI1 --> STL
+    SI2 --> STL
+    SI3 --> STL
+    STL --> |pagar| MER
+

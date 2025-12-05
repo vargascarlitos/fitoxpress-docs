@@ -1,0 +1,68 @@
+flowchart TB
+    subgraph REF["ref - Referencia"]
+        city[city]
+        zone[zone]
+        city_rate[city_rate]
+        zone_rate[zone_rate]
+        city_alias[city_alias]
+    end
+
+    subgraph CORE["core - Principal"]
+        user_profile[user_profile]
+        merchant[merchant]
+        address[address]
+        contact[contact]
+        merchant_address[merchant_address]
+        recipient[recipient]
+        product[product]
+        order[order]
+        order_item[order_item]
+        order_event[order_event]
+        order_pod[order_pod]
+    end
+
+    subgraph OPS["ops - Operaciones"]
+        courier[courier]
+        assignment[assignment]
+        courier_location[courier_location]
+        courier_city[courier_city]
+        courier_zone[courier_zone]
+        rider_payout[rider_payout]
+        rider_payout_item[rider_payout_item]
+    end
+
+    subgraph BILLING["billing - Facturacion"]
+        order_pricing[order_pricing]
+        collection[collection]
+        settlement[settlement]
+        settlement_item[settlement_item]
+        merchant_city_rate[merchant_city_rate]
+        merchant_zone_rate[merchant_zone_rate]
+    end
+
+    subgraph INGEST["ingest - WhatsApp"]
+        channel[channel]
+        channel_merchant[channel_merchant]
+        message[message]
+        message_location[message_location]
+        order_intent[order_intent]
+        intent_order_link[intent_order_link]
+    end
+
+    subgraph AUDIT["audit - Auditoria"]
+        event[event]
+    end
+
+    order --> order_pricing
+    order --> assignment
+    order --> collection
+    order --> settlement_item
+    merchant --> settlement
+    merchant --> merchant_city_rate
+    merchant --> merchant_zone_rate
+    courier --> assignment
+    courier --> rider_payout
+    message --> order_intent
+    order_intent --> intent_order_link
+    intent_order_link --> order
+

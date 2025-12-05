@@ -1,0 +1,40 @@
+flowchart LR
+    subgraph ENTRADA
+        WA[WhatsApp]
+    end
+
+    subgraph INGESTA
+        MSG[message]
+        LOC[message_location]
+        INT[order_intent]
+    end
+
+    subgraph CORE
+        ORD[order]
+        RCP[recipient]
+        ADR[address]
+    end
+
+    subgraph OPS
+        ASG[assignment]
+        COU[courier]
+    end
+
+    subgraph BILLING
+        PRC[order_pricing]
+        COL[collection]
+        STL[settlement]
+    end
+
+    WA --> MSG
+    MSG --> LOC
+    MSG --> INT
+    INT --> |parsed| ORD
+    ORD --> RCP
+    ORD --> ADR
+    ORD --> PRC
+    ORD --> ASG
+    ASG --> COU
+    ORD --> COL
+    COL --> |cobrado| STL
+

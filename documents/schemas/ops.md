@@ -1,0 +1,362 @@
+# Esquema `ops` - Operaciones
+
+Este esquema gestiona las operaciones de entrega: riders (couriers), asignaciones de pedidos, tracking de ubicación y pagos a riders.
+
+---
+
+## Diagrama ER
+
+```mermaid
+erDiagram
+    courier ||--o{ assignment : "tiene"
+    courier ||--o{ courier_location : "reporta ubicación"
+    courier ||--o{ courier_city : "habilitado en"
+    courier ||--o{ courier_zone : "habilitado en"
+    courier ||--o{ rider_payout : "recibe pagos"
+    
+    assignment }o--|| order : "de"
+    rider_payout ||--o{ rider_payout_item : "contiene"
+    rider_payout_item }o--|| assignment : "por"
+    
+    courier_city }o--|| city : "ciudad"
+    courier_zone }o--|| zone : "zona"
+
+    courier {
+        uuid id PK
+        uuid auth_user_id FK
+        text full_name
+        text phone
+        vehicle_type vehicle_type
+        text plate
+        boolean is_active
+        date hired_at
+        timestamptz created_at
+    }
+
+    assignment {
+        uuid id PK
+        uuid order_id FK
+        uuid courier_id FK
+        assignment_status status
+        timestamptz assigned_at
+        timestamptz accepted_at
+        timestamptz picked_up_at
+        timestamptz delivered_at
+        text failed_reason
+    }
+
+    courier_location {
+        bigserial id PK
+        uuid courier_id FK
+        timestamptz at
+        geometry location
+    }
+
+    courier_city {
+        uuid courier_id PK_FK
+        bigint city_id PK_FK
+    }
+
+    courier_zone {
+        uuid courier_id PK_FK
+        bigint zone_id PK_FK
+    }
+
+    rider_payout {
+        uuid id PK
+        uuid courier_id FK
+        date period_start
+        date period_end
+        bigint total_gs
+        boolean is_paid
+        timestamptz paid_at
+        text notes
+        timestamptz created_at
+    }
+
+    rider_payout_item {
+        bigserial id PK
+        uuid payout_id FK
+        uuid assignment_id FK
+        integer amount_gs
+    }
+```
+
+---
+
+## Tablas
+
+### `ops.courier`
+
+Riders/repartidores que realizan las entregas.
+
+| Columna | Tipo | Nullable | Default | Descripción |
+|---------|------|----------|---------|-------------|
+| `id` | `uuid` | NO | `gen_random_uuid()` | Identificador único |
+| `auth_user_id` | `uuid` | SÍ | - | Referencia a `auth.users` |
+| `full_name` | `text` | NO | - | Nombre completo del rider |
+| `phone` | `text` | SÍ | - | Teléfono de contacto |
+| `vehicle_type` | `vehicle_type` | NO | - | Tipo de vehículo |
+| `plate` | `text` | SÍ | - | Placa del vehículo |
+| `is_active` | `boolean` | NO | `true` | Si el rider está activo |
+| `hired_at` | `date` | SÍ | - | Fecha de contratación |
+| `created_at` | `timestamptz` | NO | `now()` | Fecha de registro |
+
+**Constraints:**
+- `PRIMARY KEY (id)`
+
+**Tipos de vehículo (`vehicle_type`):**
+
+| Valor | Descripción |
+|-------|-------------|
+| `motorcycle` | Motocicleta |
+| `car` | Automóvil |
+| `bicycle` | Bicicleta |
+| `on_foot` | A pie |
+
+---
+
+### `ops.assignment`
+
+Asignaciones de pedidos a riders.
+
+| Columna | Tipo | Nullable | Default | Descripción |
+|---------|------|----------|---------|-------------|
+| `id` | `uuid` | NO | `gen_random_uuid()` | Identificador único |
+| `order_id` | `uuid` | NO | - | FK a `core.order` |
+| `courier_id` | `uuid` | NO | - | FK a `ops.courier` |
+| `status` | `assignment_status` | NO | `'pending'` | Estado de la asignación |
+| `assigned_at` | `timestamptz` | NO | `now()` | Fecha de asignación |
+| `accepted_at` | `timestamptz` | SÍ | - | Fecha de aceptación |
+| `picked_up_at` | `timestamptz` | SÍ | - | Fecha de recogida |
+| `delivered_at` | `timestamptz` | SÍ | - | Fecha de entrega |
+| `failed_reason` | `text` | SÍ | - | Motivo si falló |
+
+**Constraints:**
+- `PRIMARY KEY (id)`
+- `FOREIGN KEY (order_id) REFERENCES core.order(id) ON DELETE CASCADE`
+- `FOREIGN KEY (courier_id) REFERENCES ops.courier(id) ON DELETE RESTRICT`
+
+**Índices:**
+- `ix_assignment_order` en `(order_id)`
+- `ix_assignment_courier_status` en `(courier_id, status)`
+
+**Estados de asignación (`assignment_status`):**
+
+| Valor | Descripción |
+|-------|-------------|
+| `pending` | Asignado, pendiente de aceptar |
+| `accepted` | Rider aceptó la entrega |
+| `picked_up` | Rider recogió el paquete |
+| `en_route` | En ruta hacia el destino |
+| `delivered` | Entrega completada |
+| `failed` | Entrega fallida |
+| `canceled` | Asignación cancelada |
+
+**Trigger de validación:**
+- `trg_assignment_check_area`: Valida que el rider esté habilitado para la zona/ciudad del pedido antes de asignar.
+
+---
+
+### `ops.courier_location`
+
+Historial de ubicaciones GPS de los riders (tracking en tiempo real).
+
+| Columna | Tipo | Nullable | Default | Descripción |
+|---------|------|----------|---------|-------------|
+| `id` | `bigserial` | NO | auto | Identificador único |
+| `courier_id` | `uuid` | NO | - | FK a `ops.courier` |
+| `at` | `timestamptz` | NO | `now()` | Timestamp de la ubicación |
+| `location` | `geometry(Point,4326)` | NO | - | Coordenadas GPS |
+
+**Constraints:**
+- `PRIMARY KEY (id)`
+- `FOREIGN KEY (courier_id) REFERENCES ops.courier(id) ON DELETE CASCADE`
+
+**Índices:**
+- `ix_courier_location` en `(courier_id, at DESC)` - Para obtener la última ubicación
+
+**Uso:**
+```sql
+-- Última ubicación de un rider
+SELECT location, at 
+FROM ops.courier_location 
+WHERE courier_id = '...' 
+ORDER BY at DESC 
+LIMIT 1;
+```
+
+---
+
+### `ops.courier_city`
+
+Ciudades en las que un rider está habilitado para entregar.
+
+| Columna | Tipo | Nullable | Default | Descripción |
+|---------|------|----------|---------|-------------|
+| `courier_id` | `uuid` | NO | - | FK a `ops.courier` |
+| `city_id` | `bigint` | NO | - | FK a `ref.city` |
+
+**Constraints:**
+- `PRIMARY KEY (courier_id, city_id)`
+- `FOREIGN KEY (courier_id) REFERENCES ops.courier(id) ON DELETE CASCADE`
+- `FOREIGN KEY (city_id) REFERENCES ref.city(id) ON DELETE CASCADE`
+
+**Notas:**
+- Un rider solo puede ser asignado a pedidos cuya ciudad de destino esté en esta tabla
+- Si el rider tiene habilitación por zona, esa tiene prioridad
+
+---
+
+### `ops.courier_zone`
+
+Zonas específicas en las que un rider está habilitado para entregar.
+
+| Columna | Tipo | Nullable | Default | Descripción |
+|---------|------|----------|---------|-------------|
+| `courier_id` | `uuid` | NO | - | FK a `ops.courier` |
+| `zone_id` | `bigint` | NO | - | FK a `ref.zone` |
+
+**Constraints:**
+- `PRIMARY KEY (courier_id, zone_id)`
+- `FOREIGN KEY (courier_id) REFERENCES ops.courier(id) ON DELETE CASCADE`
+- `FOREIGN KEY (zone_id) REFERENCES ref.zone(id) ON DELETE CASCADE`
+
+**Notas:**
+- Permite habilitación más granular que por ciudad
+- Útil para zonas con tarifas especiales
+
+---
+
+### `ops.rider_payout`
+
+Liquidaciones/pagos a riders por entregas realizadas.
+
+| Columna | Tipo | Nullable | Default | Descripción |
+|---------|------|----------|---------|-------------|
+| `id` | `uuid` | NO | `gen_random_uuid()` | Identificador único |
+| `courier_id` | `uuid` | NO | - | FK a `ops.courier` |
+| `period_start` | `date` | NO | - | Inicio del período |
+| `period_end` | `date` | NO | - | Fin del período |
+| `total_gs` | `bigint` | NO | `0` | Total a pagar en guaraníes |
+| `is_paid` | `boolean` | NO | `false` | Si ya se pagó |
+| `paid_at` | `timestamptz` | SÍ | - | Fecha de pago |
+| `notes` | `text` | SÍ | - | Notas adicionales |
+| `created_at` | `timestamptz` | NO | `now()` | Fecha de creación |
+
+**Constraints:**
+- `PRIMARY KEY (id)`
+- `FOREIGN KEY (courier_id) REFERENCES ops.courier(id) ON DELETE RESTRICT`
+
+**Notas:**
+- Solo el rol `admin` puede confirmar pagos a riders
+- Al confirmar, se marca `settled_with_rider = true` en los pedidos incluidos
+
+---
+
+### `ops.rider_payout_item`
+
+Detalle de cada entrega incluida en un pago a rider.
+
+| Columna | Tipo | Nullable | Default | Descripción |
+|---------|------|----------|---------|-------------|
+| `id` | `bigserial` | NO | auto | Identificador único |
+| `payout_id` | `uuid` | NO | - | FK a `ops.rider_payout` |
+| `assignment_id` | `uuid` | NO | - | FK a `ops.assignment` |
+| `amount_gs` | `integer` | NO | - | Monto por esta entrega |
+
+**Constraints:**
+- `PRIMARY KEY (id)`
+- `FOREIGN KEY (payout_id) REFERENCES ops.rider_payout(id) ON DELETE CASCADE`
+- `FOREIGN KEY (assignment_id) REFERENCES ops.assignment(id) ON DELETE RESTRICT`
+- `UNIQUE (payout_id, assignment_id)` - No duplicar asignaciones en un pago
+
+---
+
+## Funciones
+
+### `ops.fn_courier_can_take(p_order_id, p_courier_id)`
+
+Valida si un rider puede tomar un pedido según su habilitación de zonas/ciudades.
+
+**Parámetros:**
+- `p_order_id` (uuid): ID del pedido
+- `p_courier_id` (uuid): ID del rider
+
+**Retorna:** `boolean`
+
+**Lógica:**
+1. Obtiene la ciudad y zona del pedido desde `billing.order_pricing`
+2. Verifica si el rider tiene la zona en `ops.courier_zone`
+3. Si no, verifica si tiene la ciudad en `ops.courier_city`
+4. Retorna `true` si alguna coincide
+
+### `ops.fn_confirm_rider_payout(p_payout_id)`
+
+Confirma el pago a un rider y marca los pedidos como rendidos.
+
+**Parámetros:**
+- `p_payout_id` (uuid): ID del pago
+
+**Acciones:**
+1. Marca `is_paid = true` y `paid_at = now()` en `ops.rider_payout`
+2. Marca `settled_with_rider = true` en todos los pedidos relacionados
+
+---
+
+## Vistas
+
+### `ops.v_order_tracking`
+
+Vista consolidada para seguimiento de pedidos.
+
+| Columna | Origen |
+|---------|--------|
+| `order_id` | `core.order.id` |
+| `merchant_id` | `core.order.merchant_id` |
+| `delivery_status` | `core.order.delivery_status` |
+| `cash_status` | `core.order.cash_status` |
+| `settled_with_merchant` | `core.order.settled_with_merchant` |
+| `settled_with_rider` | `core.order.settled_with_rider` |
+| `total_amount_gs` | `billing.order_pricing.total_amount_gs` |
+| `courier_id` | `ops.assignment.courier_id` |
+| `assignment_status` | `ops.assignment.status` |
+| `delivery_window_start` | `core.order.delivery_window_start` |
+| `delivery_window_end` | `core.order.delivery_window_end` |
+| `requested_at` | `core.order.requested_at` |
+| `due_by` | `core.order.due_by` |
+
+**Ordenamiento:** `requested_at DESC`
+
+---
+
+## Notas para Desarrolladores
+
+### Flujo de asignación
+
+```
+1. Operador selecciona pedido y rider
+2. Trigger valida habilitación del rider (zona/ciudad)
+3. Se crea assignment con status = 'pending'
+4. Rider acepta → status = 'accepted'
+5. Rider recoge → status = 'picked_up'
+6. Rider en ruta → status = 'en_route'
+7. Rider entrega → status = 'delivered'
+```
+
+### Tracking en tiempo real
+
+La app móvil del rider debe enviar ubicaciones periódicamente a `ops.courier_location`. Ejemplo de inserción:
+
+```sql
+INSERT INTO ops.courier_location (courier_id, location)
+VALUES (
+  'uuid-del-rider',
+  ST_SetSRID(ST_MakePoint(-57.6359, -25.2867), 4326)
+);
+```
+
+### Pagos a riders
+
+Solo administradores pueden ejecutar `ops.fn_confirm_rider_payout()`. Esto previene que operadores marquen pagos como completados sin autorización.
+
