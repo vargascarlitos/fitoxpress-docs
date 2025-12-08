@@ -41,6 +41,7 @@ erDiagram
     }
 
     core_user_profile ||--o| core_merchant : puede_ser_dueno
+    core_merchant ||--o{ core_bank_account : tiene_cuentas
     core_merchant ||--o{ core_merchant_address : tiene
     core_merchant ||--o{ core_product : vende
     core_merchant ||--o{ core_order : genera
@@ -74,6 +75,21 @@ erDiagram
         text ruc
         text tariff_mode
         boolean allow_tariff_fallback
+        boolean is_active
+    }
+
+    core_bank_account {
+        uuid id PK
+        uuid merchant_id FK
+        text account_type
+        boolean is_default
+        text holder_name
+        text bank_name
+        text document_number
+        text account_number
+        text alias_type
+        text alias_value
+        text label
         boolean is_active
     }
 

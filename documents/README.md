@@ -172,6 +172,26 @@ Estado del parsing de un mensaje.
 | `needs_review` | Requiere revisión manual |
 | `rejected` | Rechazado |
 
+### `bank_account_type` (esquema core)
+Tipo de cuenta bancaria del comercio.
+
+| Valor | Descripción |
+|-------|-------------|
+| `normal` | Cuenta bancaria tradicional (titular, banco, número) |
+| `alias` | Cuenta por alias SIPAP (celular, correo, RUC, etc.) |
+
+### `bank_alias_type` (esquema core)
+Tipos de alias bancario según SIPAP Paraguay.
+
+| Valor | Descripción |
+|-------|-------------|
+| `celular` | Número de celular |
+| `correo` | Correo electrónico |
+| `cedula_identidad` | Cédula de identidad |
+| `ruc` | Registro Único de Contribuyente |
+| `persona_fisica_no_residente` | Persona física no residente |
+| `carnet_residencia` | Carnet de residencia permanente |
+
 ---
 
 ## Extensiones PostgreSQL

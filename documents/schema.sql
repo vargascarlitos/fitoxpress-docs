@@ -89,6 +89,18 @@ do $$ begin
   end if;
 end $$;
 
+do $$ begin
+  if not exists (select 1 from pg_type where typname = 'bank_account_type') then
+    create type "core"."bank_account_type" as enum ('normal','alias');
+  end if;
+end $$;
+
+do $$ begin
+  if not exists (select 1 from pg_type where typname = 'bank_alias_type') then
+    create type "core"."bank_alias_type" as enum ('celular','correo','cedula_identidad','ruc','persona_fisica_no_residente','carnet_residencia');
+  end if;
+end $$;
+
 -- =========================================
 --  REF: CIUDADES / ZONAS / TARIFAS ESTÁNDAR
 -- =========================================
@@ -161,6 +173,38 @@ create table if not exists core.merchant (
   is_active               boolean not null default true,
   created_at              timestamptz not null default now()
 );
+
+create table if not exists core.bank_account (
+  id              uuid primary key default gen_random_uuid(),
+  merchant_id     uuid not null references core.merchant(id) on delete cascade,
+  account_type    core.bank_account_type not null,
+  is_default      boolean not null default false,
+  -- Cuenta tipo 'normal'
+  holder_name     text,                    -- Titular
+  bank_name       text,                    -- Nombre del banco
+  document_number text,                    -- Nro documento del titular
+  account_number  text,                    -- Nro de cuenta
+  -- Cuenta tipo 'alias'
+  alias_type      core.bank_alias_type,    -- Tipo de alias SIPAP
+  alias_value     text,                    -- Valor del alias
+  -- Metadata
+  label           text,                    -- Etiqueta opcional
+  is_active       boolean not null default true,
+  created_at      timestamptz not null default now(),
+  -- Validaciones
+  constraint chk_normal_account_fields check (
+    account_type != 'normal' or (holder_name is not null and bank_name is not null and account_number is not null)
+  ),
+  constraint chk_alias_account_fields check (
+    account_type != 'alias' or (alias_type is not null and alias_value is not null)
+  )
+);
+
+create unique index if not exists uq_bank_account_merchant_default
+  on core.bank_account (merchant_id) where is_default = true;
+
+create index if not exists ix_bank_account_merchant
+  on core.bank_account (merchant_id);
 
 create table if not exists core.address (
   id              uuid primary key default gen_random_uuid(),

@@ -196,6 +196,63 @@ Comercios/tiendas que generan pedidos.
 
 ---
 
+### `core.bank_account`
+
+Cuentas bancarias de los comercios para recibir pagos de liquidaciones. Un comercio puede tener múltiples cuentas.
+
+| Columna | Tipo | Nullable | Default | Descripción |
+|---------|------|----------|---------|-------------|
+| `id` | `uuid` | NO | `gen_random_uuid()` | Identificador único |
+| `merchant_id` | `uuid` | NO | - | FK a `core.merchant` |
+| `account_type` | `bank_account_type` | NO | - | Tipo: 'normal' o 'alias' |
+| `is_default` | `boolean` | NO | `false` | Si es la cuenta principal |
+| `holder_name` | `text` | SÍ | - | Titular (solo tipo normal) |
+| `bank_name` | `text` | SÍ | - | Nombre del banco (solo tipo normal) |
+| `document_number` | `text` | SÍ | - | Documento del titular (solo tipo normal) |
+| `account_number` | `text` | SÍ | - | Número de cuenta (solo tipo normal) |
+| `alias_type` | `bank_alias_type` | SÍ | - | Tipo de alias SIPAP (solo tipo alias) |
+| `alias_value` | `text` | SÍ | - | Valor del alias (solo tipo alias) |
+| `label` | `text` | SÍ | - | Etiqueta opcional (ej: "Cuenta principal") |
+| `is_active` | `boolean` | NO | `true` | Si la cuenta está activa |
+| `created_at` | `timestamptz` | NO | `now()` | Fecha de creación |
+
+**Constraints:**
+- `PRIMARY KEY (id)`
+- `FOREIGN KEY (merchant_id) REFERENCES core.merchant(id) ON DELETE CASCADE`
+- `UNIQUE (merchant_id) WHERE is_default = true` - Solo una cuenta por defecto por comercio
+- `CHECK chk_normal_account_fields` - Si tipo='normal', debe tener holder_name, bank_name y account_number
+- `CHECK chk_alias_account_fields` - Si tipo='alias', debe tener alias_type y alias_value
+
+**Tipos de cuenta (`bank_account_type`):**
+
+| Valor | Descripción |
+|-------|-------------|
+| `normal` | Cuenta bancaria tradicional |
+| `alias` | Cuenta por alias SIPAP |
+
+**Tipos de alias (`bank_alias_type`):**
+
+| Valor | Descripción |
+|-------|-------------|
+| `celular` | Número de celular |
+| `correo` | Correo electrónico |
+| `cedula_identidad` | Cédula de identidad |
+| `ruc` | Registro Único de Contribuyente |
+| `persona_fisica_no_residente` | Persona física no residente |
+| `carnet_residencia` | Carnet de residencia permanente |
+
+**Ejemplo - Comercio con múltiples cuentas:**
+
+| Tipo | Datos |
+|------|-------|
+| normal | Banco Itaú, Cta 123456, Titular: RT Comercial SA |
+| normal | Banco Continental, Cta 789012 |
+| alias (celular) | +595981123456 |
+| alias (ruc) | 80012345-6 |
+| alias (correo) | pagos@rtcomercial.com |
+
+---
+
 ### `core.address`
 
 Direcciones reutilizables (pickup y dropoff).
