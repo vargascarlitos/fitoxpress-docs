@@ -317,7 +317,7 @@ create table if not exists core.order_pod (
 -- =========================================
 create table if not exists ops.courier (
   id            uuid primary key default gen_random_uuid(),
-  auth_user_id  uuid,
+  auth_user_id  uuid not null references core.user_profile(auth_user_id) on delete restrict,
   full_name     text not null,
   phone         text,
   vehicle_type  ops.vehicle_type not null,
@@ -359,6 +359,27 @@ create table if not exists ops.courier_zone (
   zone_id    bigint not null references ref.zone(id) on delete cascade,
   primary key (courier_id, zone_id)
 );
+
+-- Helper: obtener datos del courier autenticado (para app rider)
+create or replace function ops.fn_get_my_courier()
+returns table (
+  courier_id uuid,
+  full_name text,
+  phone text,
+  vehicle_type ops.vehicle_type,
+  plate text,
+  is_active boolean,
+  hired_at date
+)
+language sql
+stable
+security definer
+as
+$$
+  select id, full_name, phone, vehicle_type, plate, is_active, hired_at
+  from ops.courier 
+  where auth_user_id = auth.uid();
+$$;
 
 -- Helper: validación de elegibilidad
 create or replace function ops.fn_courier_can_take(p_order_id uuid, p_courier_id uuid)

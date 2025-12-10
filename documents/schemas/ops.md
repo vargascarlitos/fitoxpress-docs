@@ -93,7 +93,7 @@ Riders/repartidores que realizan las entregas.
 | Columna | Tipo | Nullable | Default | Descripción |
 |---------|------|----------|---------|-------------|
 | `id` | `uuid` | NO | `gen_random_uuid()` | Identificador único |
-| `auth_user_id` | `uuid` | SÍ | - | Referencia a `auth.users` |
+| `auth_user_id` | `uuid` | **NO** | - | FK a `core.user_profile` (obligatorio) |
 | `full_name` | `text` | NO | - | Nombre completo del rider |
 | `phone` | `text` | SÍ | - | Teléfono de contacto |
 | `vehicle_type` | `vehicle_type` | NO | - | Tipo de vehículo |
@@ -104,6 +104,9 @@ Riders/repartidores que realizan las entregas.
 
 **Constraints:**
 - `PRIMARY KEY (id)`
+- `FOREIGN KEY (auth_user_id) REFERENCES core.user_profile(auth_user_id) ON DELETE RESTRICT`
+
+**Importante:** Todo courier debe tener un usuario en `core.user_profile` con `role = 'rider'`.
 
 **Tipos de vehículo (`vehicle_type`):**
 
@@ -274,6 +277,39 @@ Detalle de cada entrega incluida en un pago a rider.
 ---
 
 ## Funciones
+
+### `ops.fn_get_my_courier()`
+
+Retorna los datos del courier autenticado. **Usar desde la app del rider después del login.**
+
+**Parámetros:** Ninguno (usa `auth.uid()` automáticamente)
+
+**Retorna:** 
+
+| Columna | Tipo | Descripción |
+|---------|------|-------------|
+| `courier_id` | uuid | ID del courier |
+| `full_name` | text | Nombre completo |
+| `phone` | text | Teléfono |
+| `vehicle_type` | vehicle_type | Tipo de vehículo |
+| `plate` | text | Placa |
+| `is_active` | boolean | Si está activo |
+| `hired_at` | date | Fecha de contratación |
+
+**Ejemplo de uso desde la app:**
+
+```javascript
+// Después del login, obtener datos del courier
+const { data: courier, error } = await supabase
+  .rpc('fn_get_my_courier');
+
+if (courier && courier.length > 0) {
+  const { courier_id, full_name, vehicle_type } = courier[0];
+  // Guardar courier_id para usar en otras llamadas
+}
+```
+
+---
 
 ### `ops.fn_courier_can_take(p_order_id, p_courier_id)`
 
