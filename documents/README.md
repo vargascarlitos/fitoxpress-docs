@@ -238,13 +238,29 @@ NO se incluyen: `recepcionado`, `en_transito`, `reagendado`
 
 ---
 
+## Documentación de Módulos
+
+Guías técnicas para el desarrollo de cada módulo del sistema:
+
+| Módulo | Descripción | Documentación |
+|--------|-------------|---------------|
+| **Pedidos** | Gestión y creación de pedidos, asignaciones | [pedidos.md](modulos/pedidos.md) |
+
+---
+
 ## Navegación
 
+### Esquemas de Base de Datos
 - [Esquema ref - Referencia](schemas/ref.md)
 - [Esquema core - Principal](schemas/core.md)
 - [Esquema ops - Operaciones](schemas/ops.md)
 - [Esquema billing - Facturación](schemas/billing.md)
 - [Esquema ingest - Ingesta WhatsApp](schemas/ingest.md)
 - [Esquema audit - Auditoría](schemas/audit.md)
+
+### Diagramas
 - [Diagrama ER Completo](diagrams/er-diagram.md)
+
+### Módulos de Desarrollo
+- [Módulo de Pedidos](modulos/pedidos.md)
 

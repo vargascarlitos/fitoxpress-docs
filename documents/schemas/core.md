@@ -59,6 +59,7 @@ erDiagram
         bigint zone_id FK
         text reference_notes
         geometry location
+        text google_maps_url
         timestamptz created_at
     }
 
@@ -268,6 +269,7 @@ Direcciones reutilizables (pickup y dropoff).
 | `zone_id` | `bigint` | SÍ | - | FK a `ref.zone` |
 | `reference_notes` | `text` | SÍ | - | Referencias adicionales |
 | `location` | `geometry(Point,4326)` | SÍ | - | Coordenadas GPS (PostGIS) |
+| `google_maps_url` | `text` | SÍ | - | URL de Google Maps de la ubicación |
 | `created_at` | `timestamptz` | NO | `now()` | Fecha de creación |
 
 **Constraints:**
@@ -278,6 +280,7 @@ Direcciones reutilizables (pickup y dropoff).
 **Notas:**
 - El campo `location` almacena coordenadas en formato WGS84 (SRID 4326)
 - Se usa para determinar automáticamente la tarifa basada en ubicación
+- El campo `google_maps_url` permite almacenar el enlace directo a Google Maps para compartir o visualizar la ubicación fácilmente
 
 ---
 
