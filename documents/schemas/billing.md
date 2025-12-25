@@ -435,6 +435,7 @@ WHERE source = 'standard_city';
 ```
 1. Admin/Operador ejecuta cierre para un comercio y fecha
 2. Sistema busca pedidos: delivery_status IN ('entregado', 'rechazado_puerta') AND settled_with_merchant=false
+   - NOTA: `cancelado_previo` NO entra en el cierre porque el rider no hizo el viaje
 3. Por cada pedido:
    - Si entregado: amount_gs = cobrado - tarifa (positivo, comercio recibe)
    - Si rechazado_puerta: amount_gs = -tarifa (negativo, comercio debe)
@@ -465,6 +466,14 @@ Ejemplo:
 - Cobro al cliente: 0 Gs (no se cobró)
 - Tarifa de envío: 25.000 Gs
 - El comercio debe: -25.000 Gs
+```
+
+**Pedido cancelado previo (antes de que el rider salga):**
+```
+Lo que debe el comercio = 0 Gs (el rider no hizo el viaje)
+
+Este estado se usa cuando el rider contacta al cliente antes de ir y el cliente cancela.
+NO genera cobro ni para el comercio ni para nadie.
 ```
 
 **Total del cierre:**

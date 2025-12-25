@@ -30,7 +30,7 @@ end $$;
 
 do $$ begin
   if not exists (select 1 from pg_type where typname = 'delivery_status') then
-    create type delivery_status as enum ('recepcionado','en_transito','entregado','rechazado_puerta','reagendado');
+    create type delivery_status as enum ('recepcionado','en_transito','entregado','rechazado_puerta','cancelado_previo','reagendado','extraviado');
   end if;
 end $$;
 
@@ -158,7 +158,9 @@ create table if not exists core.user_profile (
   role          app_role not null,
   full_name     text,
   phone         text,
-  created_at    timestamptz not null default now()
+  created_at    timestamptz not null default now(),
+  is_active     boolean not null default true,
+  password_change_required boolean not null default false
 );
 
 create table if not exists core.merchant (
@@ -216,7 +218,8 @@ create table if not exists core.address (
   zone_id         bigint references ref.zone(id),
   reference_notes text,
   location        geometry(Point,4326),
-  created_at      timestamptz not null default now()
+  created_at      timestamptz not null default now(),
+  google_maps_url text  -- URL de Google Maps o Waze para facilitar la ubicación
 );
 
 create table if not exists core.contact (
@@ -312,6 +315,32 @@ create table if not exists core.order_pod (
   notes         text
 );
 
+comment on table core.bank_account is 'Cuentas bancarias de los comercios para recibir pagos de liquidaciones';
+comment on column core.bank_account.account_type is 'Tipo: normal (datos bancarios) o alias (SIPAP)';
+comment on column core.bank_account.is_default is 'Si es la cuenta principal del comercio';
+comment on column core.bank_account.holder_name is 'Titular de la cuenta (solo para tipo normal)';
+comment on column core.bank_account.bank_name is 'Nombre del banco (solo para tipo normal)';
+comment on column core.bank_account.document_number is 'Nro documento del titular (solo para tipo normal)';
+comment on column core.bank_account.account_number is 'Número de cuenta (solo para tipo normal)';
+comment on column core.bank_account.alias_type is 'Tipo de alias SIPAP (solo para tipo alias)';
+comment on column core.bank_account.alias_value is 'Valor del alias (solo para tipo alias)';
+
+comment on column core.address.google_maps_url is 'URL de Google Maps o Waze para facilitar la ubicación';
+comment on column core."order".scheduled_date is 'Fecha programada para la entrega. Se actualiza cuando el pedido se reagenda.';
+comment on column core."order".reschedule_count is 'Contador de veces que el pedido fue reagendado.';
+comment on column ops.courier.auth_user_id is 'Usuario de autenticación (obligatorio). Debe existir en user_profile con role=rider.';
+
+-- =========================================
+--  TABLA DE NOTAS DE RENDICIÓN
+-- =========================================
+create table if not exists core.rendition_note (
+  id          uuid primary key default gen_random_uuid(),
+  order_id    uuid not null references core."order"(id) on delete cascade,
+  note        text not null,
+  created_at  timestamptz default now(),
+  created_by  text
+);
+
 -- =========================================
 --  OPS: RIDERS, ASIGNACIONES, TRACKING
 -- =========================================
@@ -377,7 +406,7 @@ security definer
 as
 $$
   select id, full_name, phone, vehicle_type, plate, is_active, hired_at
-  from ops.courier 
+  from ops.courier
   where auth_user_id = auth.uid();
 $$;
 
@@ -945,7 +974,7 @@ begin
 
   -- Candidatos: pedidos del día que estén entregados O rechazados en puerta, no liquidados aún
   with eligible_orders as (
-    select 
+    select
       o.id as order_id,
       o.merchant_id,
       o.requested_at::date as requested_date,
@@ -963,8 +992,8 @@ begin
       and o.delivery_status in ('entregado', 'rechazado_puerta')
   )
   insert into billing.settlement_item (settlement_id, order_id, amount_gs)
-  select 
-    v_settlement_id, 
+  select
+    v_settlement_id,
     e.order_id,
     case p_mode
       when 'csv' then 0 -- si vas a cargar desde staging; luego editás el item

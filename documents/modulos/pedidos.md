@@ -285,15 +285,20 @@ VALUES ('jkl012...', 'courier-uuid...', 'pending');
 
 ### Enum `delivery_status`
 
-| Estado | Descripción | Siguiente Estado Posible |
-|--------|-------------|--------------------------|
-| `recepcionado` | Pedido recibido, sin asignar | `en_transito`, `reagendado` |
-| `en_transito` | Rider en camino | `entregado`, `rechazado_puerta`, `reagendado` |
-| `entregado` | Entrega exitosa | (final) |
-| `rechazado_puerta` | Cliente rechazó en destino | (final) |
-| `reagendado` | Programado para otra fecha | `en_transito` |
-| `cancelado` | Pedido cancelado | (final) |
-| `devuelto` | Devuelto al comercio | (final) |
+| Estado | Descripción | ¿Entra en cierre? | Siguiente Estado Posible |
+|--------|-------------|-------------------|--------------------------|
+| `recepcionado` | Pedido recibido, sin asignar | No | `en_transito`, `reagendado`, `cancelado_previo` |
+| `en_transito` | Rider en camino | No | `entregado`, `rechazado_puerta`, `reagendado` |
+| `entregado` | Entrega exitosa | **Sí** | (final) |
+| `rechazado_puerta` | Cliente rechazó en destino (rider YA llegó) | **Sí** (se cobra tarifa) | (final) |
+| `cancelado_previo` | Cancelado antes de que el rider salga | No | (final) |
+| `reagendado` | Programado para otra fecha | No | `en_transito` |
+| `cancelado` | Pedido cancelado | No | (final) |
+| `devuelto` | Devuelto al comercio | No | (final) |
+
+**Diferencia importante entre `rechazado_puerta` y `cancelado_previo`:**
+- **`rechazado_puerta`**: El rider **llegó físicamente** al destino y el cliente rechazó. Se cobra tarifa al comercio porque el rider hizo el viaje.
+- **`cancelado_previo`**: El rider contactó al cliente **antes de salir** (por mensaje/llamada) y el cliente canceló. NO se cobra tarifa porque el rider no hizo el viaje.
 
 ### Enum `cash_status`
 
@@ -323,9 +328,10 @@ stateDiagram-v2
     recepcionado --> en_transito: Rider acepta
     recepcionado --> reagendado: Programar fecha
     recepcionado --> cancelado: Cancelar
+    recepcionado --> cancelado_previo: Cliente cancela antes de salir
     
     en_transito --> entregado: Entrega OK
-    en_transito --> rechazado_puerta: Cliente rechaza
+    en_transito --> rechazado_puerta: Cliente rechaza en puerta
     en_transito --> reagendado: Reprogramar
     en_transito --> devuelto: Devolver
     
@@ -334,7 +340,11 @@ stateDiagram-v2
     entregado --> [*]
     rechazado_puerta --> [*]
     cancelado --> [*]
+    cancelado_previo --> [*]
     devuelto --> [*]
+    
+    note right of rechazado_puerta: Se cobra tarifa al comercio
+    note right of cancelado_previo: NO se cobra tarifa
 ```
 
 ---

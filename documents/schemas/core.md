@@ -12,18 +12,19 @@ erDiagram
     merchant ||--o{ merchant_address : "tiene"
     merchant ||--o{ product : "vende"
     merchant ||--o{ order : "genera"
-    
+
     address ||--o{ merchant_address : "asignada a"
     contact ||--o{ recipient : "tiene"
     recipient ||--o{ order : "recibe"
     address ||--o| recipient : "dirección default"
-    
+
     order ||--o{ order_item : "contiene"
     order ||--o{ order_event : "tiene historial"
     order ||--o| order_pod : "tiene POD"
+    order ||--o{ rendition_note : "tiene notas"
     order }o--|| address : "pickup"
     order }o--|| address : "dropoff"
-    
+
     product ||--o{ order_item : "en"
 
     user_profile {
@@ -135,6 +136,14 @@ erDiagram
         text signature_url
         text photo_url
         text notes
+    }
+
+    rendition_note {
+        uuid id PK
+        uuid order_id FK
+        text note
+        timestamptz created_at
+        text created_by
     }
 ```
 
@@ -398,14 +407,20 @@ Pedidos de entrega.
 
 **Estados operativos:**
 
-| delivery_status | cash_status | Descripción |
-|-----------------|-------------|-------------|
-| `recepcionado` | `sin_cobro` | Pedido recibido, pendiente |
-| `en_transito` | `sin_cobro` | Rider en camino |
-| `entregado` | `sin_cobro` | Entregado, sin cobro aún |
-| `entregado` | `cobrado` | Entregado y cobrado |
-| `rechazado_puerta` | `sin_cobro` | Cliente rechazó en destino (se cobra tarifa al comercio) |
-| `reagendado` | `sin_cobro` | Cliente pidió entregar otro día (NO entra en cierre) |
+| delivery_status | cash_status | Descripción | ¿Entra en cierre? |
+|-----------------|-------------|-------------|-------------------|
+| `recepcionado` | `sin_cobro` | Pedido recibido, pendiente | No |
+| `en_transito` | `sin_cobro` | Rider en camino | No |
+| `entregado` | `sin_cobro` | Entregado, sin cobro aún | Sí |
+| `entregado` | `cobrado` | Entregado y cobrado | Sí |
+| `rechazado_puerta` | `sin_cobro` | Cliente rechazó en destino (se cobra tarifa al comercio) | Sí |
+| `cancelado_previo` | `sin_cobro` | Cancelado antes de que el rider salga (NO se cobra tarifa) | No |
+| `reagendado` | `sin_cobro` | Cliente pidió entregar otro día | No |
+| `extraviado` | `sin_cobro` | Pedido extraviado o perdido | No |
+
+**Diferencia entre `rechazado_puerta` y `cancelado_previo`:**
+- `rechazado_puerta`: El rider **llegó físicamente** al destino y el cliente rechazó. Se cobra tarifa porque el rider hizo el viaje.
+- `cancelado_previo`: El rider contactó al cliente **antes de salir** (por mensaje/llamada) y el cliente canceló. NO se cobra tarifa porque el rider no hizo el viaje.
 
 **Flags de liquidación:**
 - `settled_with_merchant`: Se incluyó en una liquidación al comercio
@@ -473,6 +488,28 @@ Prueba de entrega (Proof of Delivery).
 
 ---
 
+### `core.rendition_note`
+
+Notas de rendición asociadas a un pedido. Permite agregar observaciones durante el proceso de rendición de dinero.
+
+| Columna | Tipo | Nullable | Default | Descripción |
+|---------|------|----------|---------|-------------|
+| `id` | `uuid` | NO | `gen_random_uuid()` | Identificador único |
+| `order_id` | `uuid` | NO | - | FK a `core.order` |
+| `note` | `text` | NO | - | Contenido de la nota |
+| `created_at` | `timestamptz` | SÍ | `now()` | Fecha de creación |
+| `created_by` | `text` | SÍ | - | Usuario que creó la nota |
+
+**Constraints:**
+- `PRIMARY KEY (id)`
+- `FOREIGN KEY (order_id) REFERENCES core.order(id) ON DELETE CASCADE`
+
+**Notas:**
+- Usado para registrar observaciones durante la rendición de efectivo
+- Útil para justificar diferencias o registrar incidencias
+
+---
+
 ## Notas para Desarrolladores
 
 ### Crear un pedido desde mensaje WhatsApp
@@ -492,18 +529,25 @@ Prueba de entrega (Proof of Delivery).
                               ┌─→ entregado ──────────────────┐
                               │        ↓                      │
 recepcionado → en_transito ───┼─→ rechazado_puerta ──────────┼─→ settled_with_merchant
-                              │                               │          ↓
-                              └─→ reagendado                  │   settled_with_rider
-                                     ↓                        │
-                              (scheduled_date = nueva fecha)  │
-                              (reschedule_count += 1)         │
-                                     ↓                        │
-                              recepcionado (día programado) ──┘
+       │                      │                               │          ↓
+       │                      └─→ reagendado                  │   settled_with_rider
+       │                             ↓                        │
+       │                      (scheduled_date = nueva fecha)  │
+       │                      (reschedule_count += 1)         │
+       │                             ↓                        │
+       │                      recepcionado (día programado) ──┘
+       │
+       └─→ cancelado_previo (rider contactó cliente antes de salir, cliente canceló)
+                 ↓
+           (NO genera cobro)
 ```
 
 **Estados finales (entran en cierre diario):**
 - `entregado`: Comercio recibe (cobrado - tarifa)
 - `rechazado_puerta`: Comercio paga (-tarifa)
+
+**Estados finales (NO entran en cierre):**
+- `cancelado_previo`: NO genera cobro (rider no hizo el viaje)
 
 **Estados intermedios (NO entran en cierre):**
 - `recepcionado`, `en_transito`, `reagendado`

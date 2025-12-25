@@ -73,7 +73,8 @@ Estado de entrega del pedido (operativo).
 | `recepcionado` | Pedido recibido, pendiente de asignar |
 | `en_transito` | Rider en camino a entregar |
 | `entregado` | Entrega completada |
-| `rechazado_puerta` | Cliente rechazó el pedido en destino |
+| `rechazado_puerta` | Cliente rechazó el pedido en destino (se cobra tarifa al comercio) |
+| `cancelado_previo` | Cancelado antes de que el rider salga (NO se cobra tarifa) |
 | `reagendado` | Cliente pidió entregar otro día |
 
 ### `cash_status`
@@ -220,6 +221,7 @@ El sistema utiliza las siguientes extensiones:
    └── delivery_status: recepcionado → en_transito → entregado
                                                    → rechazado_puerta
                                                    → reagendado (scheduled_date)
+                        recepcionado → cancelado_previo (antes de salir)
 
 5. COBRO (si entregado)
    └── billing.collection (cash_status: cobrado)
@@ -232,9 +234,13 @@ El sistema utiliza las siguientes extensiones:
 
 Solo se incluyen en el cierre:
 - **entregado**: comercio recibe (cobrado - tarifa)
-- **rechazado_puerta**: comercio paga (-tarifa)
+- **rechazado_puerta**: comercio paga (-tarifa) - el rider YA hizo el viaje
 
-NO se incluyen: `recepcionado`, `en_transito`, `reagendado`
+NO se incluyen: `recepcionado`, `en_transito`, `reagendado`, `cancelado_previo`
+
+**Diferencia importante:**
+- `rechazado_puerta`: El rider **llegó físicamente** al destino → se cobra tarifa al comercio
+- `cancelado_previo`: El rider contactó al cliente **antes de salir** → NO se cobra tarifa
 
 ---
 

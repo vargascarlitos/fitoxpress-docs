@@ -68,12 +68,19 @@ Roles de usuario en la aplicación.
 ### `delivery_status`
 Estado de entrega del pedido (operativo).
 
-| Valor | Descripción |
-|-------|-------------|
-| `recepcionado` | Pedido recibido, pendiente de asignar |
-| `en_transito` | Rider en camino a entregar |
-| `entregado` | Entrega completada |
-| `rechazado_puerta` | Cliente rechazó el pedido en destino |
+| Valor | Descripción | ¿Entra en cierre? |
+|-------|-------------|-------------------|
+| `recepcionado` | Pedido recibido, pendiente de asignar | No |
+| `en_transito` | Rider en camino a entregar | No |
+| `entregado` | Entrega completada | **Sí** |
+| `rechazado_puerta` | Cliente rechazó en destino (se cobra tarifa) | **Sí** |
+| `cancelado_previo` | Cancelado antes de salir el rider (no se cobra) | No |
+| `reagendado` | Programado para otra fecha | No |
+| `extraviado` | Pedido extraviado o perdido | No |
+
+**Nota importante:**
+- `rechazado_puerta`: El rider **llegó físicamente** → Se cobra tarifa al comercio.
+- `cancelado_previo`: El rider contactó antes de salir → NO se cobra tarifa.
 
 ### `cash_status`
 Estado del cobro contra-entrega.
