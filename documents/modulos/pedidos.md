@@ -197,24 +197,24 @@ flowchart TD
         C[core.contact]
         A[core.address]
     end
-    
+
     subgraph "Paso 2: Vincular"
         R[core.recipient]
     end
-    
+
     subgraph "Paso 3: Pedido"
         O[core.order]
     end
-    
+
     subgraph "Paso 4: Detalles"
         OI[core.order_item]
         OP[billing.order_pricing]
     end
-    
+
     subgraph "Paso 5: Asignación"
         AS[ops.assignment]
     end
-    
+
     C --> R
     A --> R
     R --> O
@@ -285,20 +285,23 @@ VALUES ('jkl012...', 'courier-uuid...', 'pending');
 
 ### Enum `delivery_status`
 
-| Estado | Descripción | ¿Entra en cierre? | Siguiente Estado Posible |
-|--------|-------------|-------------------|--------------------------|
-| `recepcionado` | Pedido recibido, sin asignar | No | `en_transito`, `reagendado`, `cancelado_previo` |
-| `en_transito` | Rider en camino | No | `entregado`, `rechazado_puerta`, `reagendado` |
-| `entregado` | Entrega exitosa | **Sí** | (final) |
-| `rechazado_puerta` | Cliente rechazó en destino (rider YA llegó) | **Sí** (se cobra tarifa) | (final) |
-| `cancelado_previo` | Cancelado antes de que el rider salga | No | (final) |
-| `reagendado` | Programado para otra fecha | No | `en_transito` |
-| `cancelado` | Pedido cancelado | No | (final) |
-| `devuelto` | Devuelto al comercio | No | (final) |
+| Estado | Descripción | ¿Cobra tarifa? | ¿Entra en cierre? | Siguiente Estado Posible |
+|--------|-------------|----------------|-------------------|--------------------------|
+| `recepcionado` | Pedido recibido, sin asignar | - | No | `en_transito`, `reagendado`, `cancelado_previo`, `no_atiende`, `para_devolucion` |
+| `en_transito` | Rider en camino | - | No | `entregado`, `rechazado_puerta`, `reagendado`, `no_atiende`, `para_devolucion` |
+| `entregado` | Entrega exitosa | **Sí** | **Sí** | (final) |
+| `rechazado_puerta` | Cliente rechazó en destino (rider YA llegó) | **Sí** | **Sí** | `reagendado`, `para_devolucion` |
+| `cancelado_previo` | Cancelado antes de que el rider salga | No | No | (final) |
+| `reagendado` | Programado para otra fecha | - | No | `en_transito`, `recepcionado`, `no_atiende`, `para_devolucion` |
+| `extraviado` | Pedido perdido | - | No | (final) |
+| `no_atiende` | Cliente no contesta, auto-reagenda para mañana | **No** | Sí (Gs. 0) | `en_transito`, `reagendado`, `para_devolucion` |
+| `para_devolucion` | Múltiples intentos, se devuelve al comercio | **No** | Sí (Gs. 0) | `extraviado` |
 
-**Diferencia importante entre `rechazado_puerta` y `cancelado_previo`:**
-- **`rechazado_puerta`**: El rider **llegó físicamente** al destino y el cliente rechazó. Se cobra tarifa al comercio porque el rider hizo el viaje.
+**Diferencia importante entre estados sin cobro de tarifa:**
+- **`rechazado_puerta`**: El rider **llegó físicamente** al destino y el cliente rechazó. **SÍ se cobra tarifa** al comercio porque el rider hizo el viaje.
 - **`cancelado_previo`**: El rider contactó al cliente **antes de salir** (por mensaje/llamada) y el cliente canceló. NO se cobra tarifa porque el rider no hizo el viaje.
+- **`no_atiende`**: El rider intentó contactar al cliente pero no responde. NO se cobra tarifa. Auto-reagenda para el día siguiente.
+- **`para_devolucion`**: Después de múltiples intentos fallidos, el pedido se marca para devolver al comercio. NO se cobra tarifa.
 
 ### Enum `cash_status`
 
@@ -324,27 +327,44 @@ VALUES ('jkl012...', 'courier-uuid...', 'pending');
 ```mermaid
 stateDiagram-v2
     [*] --> recepcionado: Nuevo pedido
-    
+
     recepcionado --> en_transito: Rider acepta
     recepcionado --> reagendado: Programar fecha
-    recepcionado --> cancelado: Cancelar
     recepcionado --> cancelado_previo: Cliente cancela antes de salir
-    
+    recepcionado --> no_atiende: No contesta
+    recepcionado --> para_devolucion: Devolver
+    recepcionado --> extraviado: Perdido
+
     en_transito --> entregado: Entrega OK
     en_transito --> rechazado_puerta: Cliente rechaza en puerta
     en_transito --> reagendado: Reprogramar
-    en_transito --> devuelto: Devolver
-    
+    en_transito --> no_atiende: No contesta
+    en_transito --> para_devolucion: Devolver
+    en_transito --> extraviado: Perdido
+
+    no_atiende --> en_transito: Reintento
+    no_atiende --> reagendado: Reagendar manual
+    no_atiende --> para_devolucion: Sin caso
+
+    rechazado_puerta --> reagendado: Reintentar
+    rechazado_puerta --> para_devolucion: Sin caso
+
     reagendado --> en_transito: Día programado
-    
+    reagendado --> recepcionado: Volver a cola
+    reagendado --> no_atiende: No contesta
+    reagendado --> para_devolucion: Sin caso
+    reagendado --> extraviado: Perdido
+
+    para_devolucion --> extraviado: Perdido en devolución
+
     entregado --> [*]
-    rechazado_puerta --> [*]
-    cancelado --> [*]
     cancelado_previo --> [*]
-    devuelto --> [*]
-    
-    note right of rechazado_puerta: Se cobra tarifa al comercio
+    extraviado --> [*]
+
+    note right of rechazado_puerta: Se cobra tarifa
     note right of cancelado_previo: NO se cobra tarifa
+    note right of no_atiende: NO se cobra, auto-reagenda
+    note right of para_devolucion: NO se cobra, devuelve
 ```
 
 ---
@@ -354,7 +374,7 @@ stateDiagram-v2
 ### Listar Pedidos con Información Completa
 
 ```sql
-SELECT 
+SELECT
   o.id,
   o.cash_to_collect_gs,
   o.delivery_status,
@@ -362,27 +382,27 @@ SELECT
   o.requested_at,
   o.scheduled_date,
   o.reschedule_count,
-  
+
   -- Merchant
   m.name AS merchant_name,
-  
+
   -- Destinatario
   c.full_name AS recipient_name,
   c.phone AS recipient_phone,
-  
+
   -- Dirección de entrega
   addr.street AS delivery_address,
   city.name AS city_name,
-  
+
   -- Productos (concatenados)
   (
     SELECT string_agg(oi.description || ' x' || oi.qty, ', ')
     FROM core.order_item oi WHERE oi.order_id = o.id
   ) AS products,
-  
+
   -- Pricing
   op.base_amount_gs AS delivery_fee,
-  
+
   -- Asignación
   cour.full_name AS rider_name,
   ass.status AS assignment_status
@@ -402,16 +422,16 @@ ORDER BY o.requested_at DESC;
 ### Obtener Pedido por ID (Detalle)
 
 ```sql
-SELECT 
+SELECT
   o.*,
-  
+
   -- Merchant
   json_build_object(
     'id', m.id,
     'name', m.name,
     'ruc', m.ruc
   ) AS merchant,
-  
+
   -- Recipient
   json_build_object(
     'name', c.full_name,
@@ -422,7 +442,7 @@ SELECT
       'city_id', city.id
     )
   ) AS recipient,
-  
+
   -- Items
   (
     SELECT json_agg(json_build_object(
@@ -432,14 +452,14 @@ SELECT
     ))
     FROM core.order_item oi WHERE oi.order_id = o.id
   ) AS items,
-  
+
   -- Pricing
   json_build_object(
     'base', op.base_amount_gs,
     'extras', op.extras_gs,
     'total', op.total_amount_gs
   ) AS pricing,
-  
+
   -- Assignment
   json_build_object(
     'id', ass.id,
@@ -490,8 +510,8 @@ WHERE o.delivery_status = 'entregado'
 ### Obtener Ciudades para Select
 
 ```sql
-SELECT id, name, department 
-FROM ref.city 
+SELECT id, name, department
+FROM ref.city
 ORDER BY name;
 ```
 
@@ -510,12 +530,12 @@ WHERE cc.city_id = $1  -- ID de la ciudad
 ```sql
 -- Primero busca tarifa custom del merchant, luego estándar
 SELECT COALESCE(
-  (SELECT amount_gs FROM billing.merchant_city_rate 
-   WHERE merchant_id = $1 AND city_id = $2 
+  (SELECT amount_gs FROM billing.merchant_city_rate
+   WHERE merchant_id = $1 AND city_id = $2
    AND effective_from <= CURRENT_DATE
    ORDER BY effective_from DESC LIMIT 1),
-  (SELECT amount_gs FROM ref.city_rate 
-   WHERE city_id = $2 
+  (SELECT amount_gs FROM ref.city_rate
+   WHERE city_id = $2
    AND effective_from <= CURRENT_DATE
    ORDER BY effective_from DESC LIMIT 1)
 ) AS delivery_rate;

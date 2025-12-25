@@ -112,19 +112,23 @@ Because:
 
 ### Delivery Status (`delivery_status`)
 
-| Status | Description | Enters Daily Closing? |
-|--------|-------------|----------------------|
-| `recepcionado` | Order received, pending assignment | No |
-| `en_transito` | Rider on the way | No |
-| `entregado` | Successfully delivered | **Yes** |
-| `rechazado_puerta` | Customer rejected at door (fee charged to merchant) | **Yes** |
-| `cancelado_previo` | Cancelled before rider departure (no fee) | No |
-| `reagendado` | Rescheduled for another date | No |
-| `extraviado` | Order lost | No |
+| Status | Description | Fee Charged? | Enters Daily Closing? |
+|--------|-------------|--------------|----------------------|
+| `recepcionado` | Order received, pending assignment | - | No |
+| `en_transito` | Rider on the way | - | No |
+| `entregado` | Successfully delivered | **Yes** | **Yes** |
+| `rechazado_puerta` | Customer rejected at door (rider arrived) | **Yes** | **Yes** |
+| `cancelado_previo` | Cancelled before rider departure | No | No |
+| `reagendado` | Rescheduled for another date | - | No |
+| `extraviado` | Order lost | - | No |
+| `no_atiende` | Customer not answering, auto-reschedules to next day | **No** | Yes (Gs. 0) |
+| `para_devolucion` | Multiple failed attempts, return to merchant | **No** | Yes (Gs. 0) |
 
-**Key distinction:**
+**Key distinctions:**
 - `rechazado_puerta`: Rider **arrived physically** → Fee IS charged.
 - `cancelado_previo`: Rider contacted before leaving → Fee NOT charged.
+- `no_atiende`: Customer not reachable, auto-reschedules to tomorrow → Fee NOT charged.
+- `para_devolucion`: After multiple attempts, order marked for return → Fee NOT charged.
 
 ### Cash Status (`cash_status`)
 
