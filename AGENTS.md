@@ -141,22 +141,41 @@ Because:
 
 ## 7. Database Structure (Supabase)
 
+### Dual Environment Setup
+
+FitoXpress uses **two separate Supabase projects**:
+
+| Environment | Project Ref | Purpose | Access Method |
+|-------------|-------------|---------|---------------|
+| **Development** | `crvqpztzddxktyjukeph` | Testing, experiments, iteration | MCP Server |
+| **Production** | `opfhhenbxgqfsnhuwzzb` | Real business operations | Supabase CLI |
+
+⚠️ **The Supabase CLI is linked to PRODUCTION** - all `supabase db push` commands affect the live database.
+
 ### MCP Access (Development)
-A Supabase MCP server is available for querying the development database directly. Use it to:
+A Supabase MCP server is available for querying the **development** database directly. Use it to:
 - Verify current table structures
 - Check data before/after operations
-- Validate migrations
+- Test migrations before applying to production
 - Explore relationships
 
 **Available MCP tools:**
 - `list_tables` - List tables by schema
 - `execute_sql` - Run SELECT queries
-- `apply_migration` - Apply DDL changes
+- `apply_migration` - Apply DDL changes (to DEV only)
 - `list_migrations` - View migration history
 - `get_logs` - Debug with service logs
 - `search_docs` - Search Supabase documentation
 
-⚠️ **Always verify documentation against the live database** - the MCP is the source of truth.
+### CLI Access (Production)
+The Supabase CLI in `supabase/` folder is linked to **production**:
+- `supabase db push` - Apply migrations to PROD
+- `supabase gen types` - Generate types from PROD schema
+- `supabase migration list` - View PROD migration history
+
+⚠️ **Always test in DEV (MCP) before pushing to PROD (CLI).**
+
+For detailed migration workflow, see [Supabase AGENTS.md](../supabase/AGENTS.md).
 
 ### Schema Organization
 Data is organized in logical schemas. **DO NOT create tables in `public` without authorization.**
@@ -237,18 +256,20 @@ Data is organized in logical schemas. **DO NOT create tables in `public` without
 
 ## 11. Current System Components
 
-| Component | Technology | Status |
-|-----------|------------|--------|
-| Admin Panel | Angular 20+ | ✅ Active |
-| Riders App | Flutter + Riverpod | ✅ Active |
-| Database | Supabase (PostgreSQL) | ✅ Active |
-| WhatsApp Bot | (Planned) | 🔜 Future |
-| Merchant Portal | (Planned) | 🔜 Future |
+| Component | Technology | Status | Folder |
+|-----------|------------|--------|--------|
+| Admin Panel | Angular 20+ | ✅ Active | `fitoxpress-admin/` |
+| Riders App | Flutter + Riverpod | ✅ Active | `fitoxpress-app-riders/` |
+| Database (DEV) | Supabase (PostgreSQL) | ✅ Active | MCP Server |
+| Database (PROD) | Supabase (PostgreSQL) | ✅ Active | `supabase/` (CLI) |
+| WhatsApp Bot | (Planned) | 🔜 Future | - |
+| Merchant Portal | (Planned) | 🔜 Future | - |
 
 ---
 
 ## 12. Related Documentation
 
+- [Supabase Migrations Guide](../supabase/AGENTS.md)
 - [Database Schemas](documents/README.md)
 - [Core Schema](documents/schemas/core.md)
 - [Ops Schema](documents/schemas/ops.md)
