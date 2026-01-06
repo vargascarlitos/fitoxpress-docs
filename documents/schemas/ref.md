@@ -49,6 +49,12 @@ erDiagram
         bigint city_id FK
         text alias
     }
+
+    holiday {
+        date date PK
+        text description
+        timestamptz created_at
+    }
 ```
 
 ---
@@ -183,9 +189,42 @@ La función `billing.fn_resolve_rate_v2()` implementa esta lógica considerando 
 
 ---
 
+### `ref.holiday`
+
+Feriados de Paraguay. Usado para calcular días laborables del mes en el cierre de caja.
+
+| Columna | Tipo | Nullable | Default | Descripción |
+|---------|------|----------|---------|-------------|
+| `date` | `date` | NO | - | Fecha del feriado (PK) |
+| `description` | `text` | NO | - | Descripción del feriado |
+| `created_at` | `timestamptz` | SÍ | `now()` | Fecha de creación |
+
+**Constraints:**
+- `PRIMARY KEY (date)`
+
+**Ejemplo de feriados (Paraguay 2026):**
+
+| Fecha | Descripción |
+|-------|-------------|
+| 2026-01-01 | Año Nuevo |
+| 2026-03-01 | Día de los Héroes |
+| 2026-05-01 | Día del Trabajador |
+| 2026-05-15 | Día de la Independencia |
+| 2026-06-12 | Paz del Chaco |
+| 2026-08-15 | Fundación de Asunción |
+| 2026-09-29 | Día de la Victoria de Boquerón |
+| 2026-12-08 | Virgen de Caacupé |
+| 2026-12-25 | Navidad |
+
+**Uso:**
+La función `billing.get_working_days_count()` usa esta tabla para excluir feriados del cálculo de días laborables.
+
+---
+
 ## Notas para Desarrolladores
 
 - Las coordenadas de ubicación (del mensaje WhatsApp) se usan para determinar la ciudad/zona mediante PostGIS
 - Los alias de ciudad son críticos para el parsing automático de mensajes
 - Las tarifas tienen vigencia temporal para permitir cambios de precios sin perder historial
+- Los feriados se usan para calcular el salario diario de los riders fijos
 

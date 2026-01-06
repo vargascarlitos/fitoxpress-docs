@@ -68,14 +68,17 @@ Roles de usuario en la aplicación.
 ### `delivery_status`
 Estado de entrega del pedido (operativo).
 
-| Valor | Descripción |
-|-------|-------------|
-| `recepcionado` | Pedido recibido, pendiente de asignar |
-| `en_transito` | Rider en camino a entregar |
-| `entregado` | Entrega completada |
-| `rechazado_puerta` | Cliente rechazó el pedido en destino (se cobra tarifa al comercio) |
-| `cancelado_previo` | Cancelado antes de que el rider salga (NO se cobra tarifa) |
-| `reagendado` | Cliente pidió entregar otro día |
+| Valor | Descripción | ¿Cobra tarifa? |
+|-------|-------------|----------------|
+| `recepcionado` | Pedido recibido, pendiente de asignar | - |
+| `en_transito` | Rider en camino a entregar | - |
+| `entregado` | Entrega completada | ✅ Sí |
+| `rechazado_puerta` | Cliente rechazó el pedido en destino (rider llegó físicamente) | ✅ Sí |
+| `cancelado_previo` | Cancelado antes de que el rider salga | ❌ No |
+| `reagendado` | Cliente pidió entregar otro día | - |
+| `no_atiende` | Cliente no atiende, se reagenda automáticamente al día siguiente | ❌ No |
+| `para_devolucion` | Múltiples intentos fallidos, pedido para devolver al comercio | ❌ No |
+| `extraviado` | Pedido perdido o extraviado | - |
 
 ### `cash_status`
 Estado del cobro contra-entrega.
@@ -98,6 +101,14 @@ Estados detallados del pedido (mantenido por compatibilidad).
 | `delivered` | Entregado |
 | `failed` | Entrega fallida |
 | `canceled` | Cancelado |
+
+### `rider_type` (esquema ops)
+Tipo de contratación del rider.
+
+| Valor | Descripción |
+|-------|-------------|
+| `fixed` | Rider fijo con sueldo mensual |
+| `commission` | Rider comisionista (cobra % por entrega) |
 
 ### `vehicle_type` (esquema ops)
 Tipo de vehículo del rider.
@@ -221,26 +232,46 @@ El sistema utiliza las siguientes extensiones:
    └── delivery_status: recepcionado → en_transito → entregado
                                                    → rechazado_puerta
                                                    → reagendado (scheduled_date)
+                                                   → no_atiende (reagenda auto)
+                                                   → para_devolucion
                         recepcionado → cancelado_previo (antes de salir)
+
+   └── Al pasar a entregado/rechazado_puerta:
+       • Se llena automáticamente fecha_para_contabilidad = HOY
+       • Se llena delivered_at en ops.assignment
 
 5. COBRO (si entregado)
    └── billing.collection (cash_status: cobrado)
 
-6. LIQUIDACIÓN
-   └── billing.settlement (comercio) + ops.rider_payout (rider)
+6. LIQUIDACIÓN COMERCIO
+   └── billing.settlement (comercio) + billing.settlement_item
+
+7. CIERRE DE CAJA DIARIO
+   └── billing.get_daily_profit_report(fecha)
+       • Filtra pedidos por fecha_para_contabilidad
+       • Calcula ganancias por tipo de rider (fijo vs comisionista)
+       • Resta gastos operativos y generales
 ```
 
 ### Cierre diario
 
-Solo se incluyen en el cierre:
-- **entregado**: comercio recibe (cobrado - tarifa)
-- **rechazado_puerta**: comercio paga (-tarifa) - el rider YA hizo el viaje
+Solo se incluyen en el cierre (generan tarifa):
+- **entregado**: comercio recibe (cobrado - tarifa), empresa cobra tarifa
+- **rechazado_puerta**: comercio paga (-tarifa), empresa cobra tarifa - el rider YA hizo el viaje
 
-NO se incluyen: `recepcionado`, `en_transito`, `reagendado`, `cancelado_previo`
+NO generan tarifa (no entran en cierre de caja):
+- `recepcionado`, `en_transito`, `reagendado` - estados intermedios
+- `cancelado_previo` - rider NO hizo el viaje
+- `no_atiende` - se reagenda automáticamente
+- `para_devolucion` - múltiples intentos fallidos
 
 **Diferencia importante:**
 - `rechazado_puerta`: El rider **llegó físicamente** al destino → se cobra tarifa al comercio
 - `cancelado_previo`: El rider contactó al cliente **antes de salir** → NO se cobra tarifa
+- `no_atiende`: Cliente no responde, pedido pasa al día siguiente → NO se cobra tarifa
+
+**Campo clave para cierre:**
+El campo `fecha_para_contabilidad` en `core.order` es la **fuente de verdad** para determinar en qué día se contabiliza el ingreso. Se llena automáticamente cuando el pedido pasa a `entregado` o `rechazado_puerta`.
 
 ---
 
@@ -251,6 +282,7 @@ Guías técnicas para el desarrollo de cada módulo del sistema:
 | Módulo | Descripción | Documentación |
 |--------|-------------|---------------|
 | **Pedidos** | Gestión y creación de pedidos, asignaciones | [pedidos.md](modulos/pedidos.md) |
+| **Cierre de Caja** | Gestión financiera y cierre contable diario | [cierre-caja.md](modulos/cierre-caja.md) |
 
 ---
 
@@ -269,4 +301,5 @@ Guías técnicas para el desarrollo de cada módulo del sistema:
 
 ### Módulos de Desarrollo
 - [Módulo de Pedidos](modulos/pedidos.md)
+- [Módulo de Cierre de Caja](modulos/cierre-caja.md)
 

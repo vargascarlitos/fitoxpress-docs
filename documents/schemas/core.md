@@ -108,6 +108,8 @@ erDiagram
         timestamptz due_by
         uuid created_by_auth
         timestamptz updated_at
+        date scheduled_date
+        date fecha_para_contabilidad
     }
 
     order_item {
@@ -393,6 +395,7 @@ Pedidos de entrega.
 | `updated_at` | `timestamptz` | NO | `now()` | Última actualización |
 | `scheduled_date` | `date` | SÍ | - | Fecha programada para entrega (cuando se reagenda) |
 | `reschedule_count` | `integer` | NO | `0` | Contador de veces que se reagendó |
+| `fecha_para_contabilidad` | `date` | SÍ | - | Fecha para cierre contable (trigger automático) |
 
 **Constraints:**
 - `PRIMARY KEY (id)`
@@ -407,16 +410,18 @@ Pedidos de entrega.
 
 **Estados operativos:**
 
-| delivery_status | cash_status | Descripción | ¿Entra en cierre? |
-|-----------------|-------------|-------------|-------------------|
-| `recepcionado` | `sin_cobro` | Pedido recibido, pendiente | No |
-| `en_transito` | `sin_cobro` | Rider en camino | No |
-| `entregado` | `sin_cobro` | Entregado, sin cobro aún | Sí |
-| `entregado` | `cobrado` | Entregado y cobrado | Sí |
-| `rechazado_puerta` | `sin_cobro` | Cliente rechazó en destino (se cobra tarifa al comercio) | Sí |
-| `cancelado_previo` | `sin_cobro` | Cancelado antes de que el rider salga (NO se cobra tarifa) | No |
-| `reagendado` | `sin_cobro` | Cliente pidió entregar otro día | No |
-| `extraviado` | `sin_cobro` | Pedido extraviado o perdido | No |
+| delivery_status | cash_status | Descripción | ¿Entra en cierre? | ¿Cobra tarifa? |
+|-----------------|-------------|-------------|-------------------|----------------|
+| `recepcionado` | `sin_cobro` | Pedido recibido, pendiente | No | - |
+| `en_transito` | `sin_cobro` | Rider en camino | No | - |
+| `entregado` | `sin_cobro` | Entregado, sin cobro aún | Sí | ✅ Sí |
+| `entregado` | `cobrado` | Entregado y cobrado | Sí | ✅ Sí |
+| `rechazado_puerta` | `sin_cobro` | Cliente rechazó en destino (rider llegó) | Sí | ✅ Sí |
+| `cancelado_previo` | `sin_cobro` | Cancelado antes de que el rider salga | No | ❌ No |
+| `reagendado` | `sin_cobro` | Cliente pidió entregar otro día | No | - |
+| `no_atiende` | `sin_cobro` | Cliente no atiende, se reagenda automáticamente | No | ❌ No |
+| `para_devolucion` | `sin_cobro` | Múltiples intentos fallidos, devolver al comercio | No | ❌ No |
+| `extraviado` | `sin_cobro` | Pedido extraviado o perdido | No | - |
 
 **Diferencia entre `rechazado_puerta` y `cancelado_previo`:**
 - `rechazado_puerta`: El rider **llegó físicamente** al destino y el cliente rechazó. Se cobra tarifa porque el rider hizo el viaje.
@@ -548,9 +553,15 @@ recepcionado → en_transito ───┼─→ rechazado_puerta ─────
 
 **Estados finales (NO entran en cierre):**
 - `cancelado_previo`: NO genera cobro (rider no hizo el viaje)
+- `no_atiende`: Se reagenda automáticamente, NO cobra tarifa
+- `para_devolucion`: Pedido para devolver al comercio, NO cobra tarifa
 
 **Estados intermedios (NO entran en cierre):**
 - `recepcionado`, `en_transito`, `reagendado`
+
+**Trigger `trg_set_fecha_contabilidad`:**
+- Cuando el pedido pasa a `entregado` o `rechazado_puerta`, automáticamente se llena `fecha_para_contabilidad = CURRENT_DATE`
+- Este campo es la **fuente de verdad** para el cierre de caja diario
 
 **Nota sobre reagendamiento:**
 - Cuando el cliente pide entregar otro día, el rider marca `reagendado`

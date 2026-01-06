@@ -13,11 +13,13 @@ erDiagram
     courier ||--o{ courier_city : "habilitado en"
     courier ||--o{ courier_zone : "habilitado en"
     courier ||--o{ rider_payout : "recibe pagos"
-    
+    courier ||--o{ courier_expense : "tiene gastos"
+    courier ||--o{ salary_advance : "tiene adelantos"
+
     assignment }o--|| order : "de"
     rider_payout ||--o{ rider_payout_item : "contiene"
     rider_payout_item }o--|| assignment : "por"
-    
+
     courier_city }o--|| city : "ciudad"
     courier_zone }o--|| zone : "zona"
 
@@ -31,6 +33,9 @@ erDiagram
         boolean is_active
         date hired_at
         timestamptz created_at
+        rider_type rider_type
+        integer monthly_salary_gs
+        numeric commission_rate
     }
 
     assignment {
@@ -101,6 +106,9 @@ Riders/repartidores que realizan las entregas.
 | `is_active` | `boolean` | NO | `true` | Si el rider está activo |
 | `hired_at` | `date` | SÍ | - | Fecha de contratación |
 | `created_at` | `timestamptz` | NO | `now()` | Fecha de registro |
+| `rider_type` | `rider_type` | NO | `'fixed'` | Tipo de contratación (fijo/comisionista) |
+| `monthly_salary_gs` | `integer` | NO | `0` | Salario mensual en Gs (solo para fijos) |
+| `commission_rate` | `numeric(3,2)` | NO | `0.70` | Tasa de comisión (solo para comisionistas) |
 
 **Constraints:**
 - `PRIMARY KEY (id)`
@@ -132,8 +140,11 @@ Asignaciones de pedidos a riders.
 | `assigned_at` | `timestamptz` | NO | `now()` | Fecha de asignación |
 | `accepted_at` | `timestamptz` | SÍ | - | Fecha de aceptación |
 | `picked_up_at` | `timestamptz` | SÍ | - | Fecha de recogida |
-| `delivered_at` | `timestamptz` | SÍ | - | Fecha de entrega |
+| `delivered_at` | `timestamptz` | SÍ | - | Fecha de entrega (también para rechazado_puerta) |
 | `failed_reason` | `text` | SÍ | - | Motivo si falló |
+| `is_in_route` | `boolean` | NO | `false` | Si está en la ruta activa del rider |
+| `route_position` | `smallint` | SÍ | - | Posición en la ruta (1, 2, 3...) |
+| `customer_confirmed_at` | `timestamptz` | SÍ | - | Cuando el cliente confirmó disponibilidad |
 
 **Constraints:**
 - `PRIMARY KEY (id)`
@@ -143,6 +154,9 @@ Asignaciones de pedidos a riders.
 **Índices:**
 - `ix_assignment_order` en `(order_id)`
 - `ix_assignment_courier_status` en `(courier_id, status)`
+
+**Nota sobre `delivered_at`:**
+Este campo se llena tanto para `entregado` como para `rechazado_puerta`, ya que en ambos casos el rider llegó físicamente al destino.
 
 **Estados de asignación (`assignment_status`):**
 
@@ -182,10 +196,10 @@ Historial de ubicaciones GPS de los riders (tracking en tiempo real).
 **Uso:**
 ```sql
 -- Última ubicación de un rider
-SELECT location, at 
-FROM ops.courier_location 
-WHERE courier_id = '...' 
-ORDER BY at DESC 
+SELECT location, at
+FROM ops.courier_location
+WHERE courier_id = '...'
+ORDER BY at DESC
 LIMIT 1;
 ```
 
@@ -276,6 +290,56 @@ Detalle de cada entrega incluida en un pago a rider.
 
 ---
 
+### `ops.courier_expense`
+
+Gastos operativos de riders fijos (combustible, mantenimiento, etc.). Solo aplica a riders con `rider_type = 'fixed'`.
+
+| Columna | Tipo | Nullable | Default | Descripción |
+|---------|------|----------|---------|-------------|
+| `id` | `uuid` | NO | `gen_random_uuid()` | Identificador único |
+| `courier_id` | `uuid` | NO | - | FK a `ops.courier` |
+| `expense_date` | `date` | NO | - | Fecha del gasto |
+| `expense_type` | `text` | NO | - | Tipo: 'fuel', 'maintenance', 'other' |
+| `amount_gs` | `integer` | NO | - | Monto en guaraníes (> 0) |
+| `description` | `text` | SÍ | - | Descripción del gasto |
+| `created_at` | `timestamptz` | SÍ | `now()` | Fecha de creación |
+| `created_by` | `uuid` | SÍ | - | Usuario que registró |
+
+**Constraints:**
+- `PRIMARY KEY (id)`
+- `FOREIGN KEY (courier_id) REFERENCES ops.courier(id)`
+- `CHECK (expense_type IN ('fuel', 'maintenance', 'other'))`
+- `CHECK (amount_gs > 0)`
+
+**Trigger:**
+- `trg_expense_only_fixed`: Valida que el courier sea de tipo `fixed` antes de insertar.
+
+---
+
+### `ops.salary_advance`
+
+Adelantos de salario para riders fijos.
+
+| Columna | Tipo | Nullable | Default | Descripción |
+|---------|------|----------|---------|-------------|
+| `id` | `uuid` | NO | `gen_random_uuid()` | Identificador único |
+| `courier_id` | `uuid` | NO | - | FK a `ops.courier` |
+| `advance_date` | `date` | NO | - | Fecha del adelanto |
+| `amount_gs` | `integer` | NO | - | Monto en guaraníes (> 0) |
+| `notes` | `text` | SÍ | - | Notas adicionales |
+| `created_at` | `timestamptz` | SÍ | `now()` | Fecha de creación |
+| `created_by` | `uuid` | SÍ | - | Usuario que registró |
+
+**Constraints:**
+- `PRIMARY KEY (id)`
+- `FOREIGN KEY (courier_id) REFERENCES ops.courier(id)`
+- `CHECK (amount_gs > 0)`
+
+**Trigger:**
+- `trg_advance_only_fixed`: Valida que el courier sea de tipo `fixed` antes de insertar.
+
+---
+
 ## Funciones
 
 ### `ops.fn_get_my_courier()`
@@ -284,7 +348,7 @@ Retorna los datos del courier autenticado. **Usar desde la app del rider despué
 
 **Parámetros:** Ninguno (usa `auth.uid()` automáticamente)
 
-**Retorna:** 
+**Retorna:**
 
 | Columna | Tipo | Descripción |
 |---------|------|-------------|

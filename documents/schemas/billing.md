@@ -10,18 +10,41 @@ Este esquema gestiona todo lo relacionado con dinero: pricing de pedidos, cobros
 erDiagram
     order ||--|| order_pricing : "tiene precio"
     order ||--o{ collection : "tiene cobros"
-    
+
     merchant ||--o{ settlement : "tiene liquidaciones"
     merchant ||--o{ merchant_city_rate : "tiene tarifas custom"
     merchant ||--o{ merchant_zone_rate : "tiene tarifas custom"
-    
+
     settlement ||--o{ settlement_item : "contiene"
     settlement_item }o--|| order : "de"
-    
+
     order_pricing }o--o| city : "ciudad destino"
     order_pricing }o--o| zone : "zona destino"
     merchant_city_rate }o--|| city : "para ciudad"
     merchant_zone_rate }o--|| zone : "para zona"
+
+    bonus_rule {
+        serial id PK
+        integer min_orders
+        integer amount_gs
+        text description
+    }
+
+    general_expense {
+        uuid id PK
+        date expense_date
+        text expense_type
+        integer amount_gs
+        text description
+    }
+
+    daily_cash_closing {
+        uuid id PK
+        date closing_date
+        bigint total_delivery_fees_gs
+        bigint total_profit_gs
+        text status
+    }
 
     order_pricing {
         uuid order_id PK_FK
@@ -276,6 +299,92 @@ Tarifas personalizadas por zona para un comercio específico.
 
 ---
 
+### `billing.bonus_rule`
+
+Escala de plus/bonificaciones diarias para riders fijos según cantidad de entregas.
+
+| Columna | Tipo | Nullable | Default | Descripción |
+|---------|------|----------|---------|-------------|
+| `id` | `serial` | NO | auto | Identificador único |
+| `min_orders` | `integer` | NO | - | Mínimo de entregas para aplicar |
+| `amount_gs` | `integer` | NO | - | Monto del plus en guaraníes (> 0) |
+| `description` | `text` | SÍ | - | Descripción del nivel |
+
+**Constraints:**
+- `PRIMARY KEY (id)`
+- `UNIQUE (min_orders)`
+- `CHECK (amount_gs > 0)`
+
+**Escala por defecto:**
+
+| Entregas | Plus |
+|----------|------|
+| 12+ | 50.000 Gs |
+| 15+ | 75.000 Gs |
+| 18+ | 100.000 Gs |
+| 21+ | 125.000 Gs |
+| 24+ | 150.000 Gs |
+
+---
+
+### `billing.general_expense`
+
+Gastos generales de la empresa (no asociados a riders).
+
+| Columna | Tipo | Nullable | Default | Descripción |
+|---------|------|----------|---------|-------------|
+| `id` | `uuid` | NO | `gen_random_uuid()` | Identificador único |
+| `expense_date` | `date` | NO | - | Fecha del gasto |
+| `expense_type` | `text` | NO | - | Tipo de gasto |
+| `amount_gs` | `integer` | NO | - | Monto en guaraníes (> 0) |
+| `description` | `text` | NO | - | Descripción del gasto |
+| `created_at` | `timestamptz` | SÍ | `now()` | Fecha de creación |
+| `created_by` | `uuid` | SÍ | - | Usuario que registró |
+
+**Tipos de gasto (`expense_type`):**
+
+| Valor | Descripción |
+|-------|-------------|
+| `rent` | Alquiler |
+| `utilities` | Servicios básicos |
+| `admin` | Administrativos |
+| `system` | Sistemas |
+| `marketing` | Marketing |
+| `other` | Otros |
+
+---
+
+### `billing.daily_cash_closing`
+
+Registro de cierres de caja diarios con desglose de ganancias.
+
+| Columna | Tipo | Nullable | Default | Descripción |
+|---------|------|----------|---------|-------------|
+| `id` | `uuid` | NO | `gen_random_uuid()` | Identificador único |
+| `closing_date` | `date` | NO | - | Fecha del cierre (única) |
+| `total_delivery_fees_gs` | `bigint` | NO | `0` | Total ingresos por delivery |
+| `fixed_rider_fees_gs` | `bigint` | NO | `0` | Ingresos de riders fijos |
+| `commission_rider_fees_gs` | `bigint` | NO | `0` | Ingresos de comisionistas |
+| `commission_paid_gs` | `bigint` | NO | `0` | Comisiones pagadas |
+| `commission_profit_gs` | `bigint` | NO | `0` | Ganancia de comisionistas |
+| `daily_salary_cost_gs` | `bigint` | NO | `0` | Costo salarios diarios |
+| `bonus_cost_gs` | `bigint` | NO | `0` | Costo de plus/bonificaciones |
+| `expenses_cost_gs` | `bigint` | NO | `0` | Gastos operativos riders |
+| `fixed_profit_gs` | `bigint` | NO | `0` | Ganancia de fijos |
+| `general_expenses_gs` | `bigint` | NO | `0` | Gastos generales |
+| `total_profit_gs` | `bigint` | NO | `0` | Ganancia neta total |
+| `status` | `text` | SÍ | `'draft'` | Estado: 'draft' o 'closed' |
+| `closed_by` | `uuid` | SÍ | - | Usuario que cerró |
+| `closed_at` | `timestamptz` | SÍ | - | Fecha/hora de cierre |
+| `created_at` | `timestamptz` | SÍ | `now()` | Fecha de creación |
+
+**Constraints:**
+- `PRIMARY KEY (id)`
+- `UNIQUE (closing_date)`
+- `CHECK (status IN ('draft', 'closed'))`
+
+---
+
 ## Funciones
 
 ### `billing.fn_resolve_rate_v2(p_merchant_id, p_city_id, p_zone_id, p_at_date)`
@@ -401,6 +510,98 @@ Cierra la liquidación diaria de un comercio.
 
 ## Vistas
 
+### `billing.get_working_days_count(p_year, p_month)`
+
+Calcula los días laborables de un mes, excluyendo domingos y feriados.
+
+**Parámetros:**
+| Parámetro | Tipo | Descripción |
+|-----------|------|-------------|
+| `p_year` | `integer` | Año |
+| `p_month` | `integer` | Mes (1-12) |
+
+**Retorna:** `integer` - Cantidad de días laborables
+
+**Lógica:**
+1. Calcula total de días del mes
+2. Resta domingos
+3. Resta feriados de `ref.holiday` (que no caigan en domingo)
+
+**Ejemplo:**
+```sql
+SELECT billing.get_working_days_count(2026, 1);
+-- Resultado: 26 (enero 2026 tiene 31 días - 4 domingos - 1 feriado)
+```
+
+---
+
+### `billing.get_daily_profit_report(p_report_date)`
+
+Genera el reporte financiero diario con desglose de ganancias por tipo de rider.
+
+**Parámetros:**
+| Parámetro | Tipo | Descripción |
+|-----------|------|-------------|
+| `p_report_date` | `date` | Fecha del reporte |
+
+**Retorna:** `JSON` con la siguiente estructura:
+
+```json
+{
+  "report_date": "2026-01-05",
+  "working_days_in_month": 26,
+  "fixed_riders": [
+    {
+      "courier_id": "uuid",
+      "courier_name": "Nombre",
+      "deliveries": 5,
+      "fees_gs": 100000,
+      "daily_salary_gs": 111538,
+      "bonus_gs": 0
+    }
+  ],
+  "commission_riders": [
+    {
+      "courier_id": "uuid",
+      "courier_name": "Nombre",
+      "commission_rate": 0.70,
+      "deliveries": 3,
+      "fees_gs": 60000,
+      "rider_earnings_gs": 42000,
+      "company_profit_gs": 18000
+    }
+  ],
+  "expenses": {
+    "fixed_riders_expenses": 0,
+    "general_expenses": 0
+  },
+  "summary": {
+    "total_income": 160000,
+    "fixed_costs": {
+      "daily_salaries": 111538,
+      "bonuses": 0,
+      "expenses": 0,
+      "total": 111538
+    },
+    "commission_costs": {
+      "commission_paid": 42000
+    },
+    "general_expenses": 0,
+    "net_profit": 6462
+  }
+}
+```
+
+**Lógica de cálculo:**
+- Usa `fecha_para_contabilidad` del pedido para filtrar por fecha
+- Solo incluye pedidos con `delivery_status IN ('entregado', 'rechazado_puerta')`
+- Calcula salario diario = `monthly_salary_gs / working_days_in_month`
+- Calcula plus según escala en `billing.bonus_rule`
+- Comisión rider = `delivery_fee * commission_rate`
+- Ganancia empresa = `delivery_fee * (1 - commission_rate)`
+
+---
+
 ### `billing.v_current_rates`
 
 Vista de todas las tarifas estándar vigentes.
@@ -421,8 +622,8 @@ Vista de todas las tarifas estándar vigentes.
 SELECT * FROM billing.v_current_rates;
 
 -- Ver tarifas por ciudad
-SELECT city_name, amount_gs 
-FROM billing.v_current_rates 
+SELECT city_name, amount_gs
+FROM billing.v_current_rates
 WHERE source = 'standard_city';
 ```
 
